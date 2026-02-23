@@ -263,8 +263,8 @@ opacity:0.7;
 
 
 
-<p>Sehri: 04:45 AM</p>
-<p>Iftar: 06:32 PM</p>
+<p id="sehriTime">Sehri: Loading...</p>
+<p id="iftarTime">Iftar: Loading...</p>
 </div>
 
 <div class="card">
@@ -357,23 +357,29 @@ opacity:0.7;
 
 <script>
 
-// 🔥 AUTO SET: Agar aaj 4th roza hai to start date 3 din pehle hogi
+/// ===============================
+// 🌙 RAMADAN AUTO ROZA SYSTEM
+// ===============================
+
+// 🔥 SET FIRST RAMADAN DATE (CHANGE EVERY YEAR)
+let ramadanStart = new Date("2026-02-19");
+
 let today = new Date();
+today.setHours(0,0,0,0);
+ramadanStart.setHours(0,0,0,0);
 
-// 👇 Yahan roza number manually set kar sakte ho
-let currentRozaManual = 5;  // 👈 Agar aaj 4th roza hai to 4 likho
-
-// Ramadan start auto calculate
-let ramadanStart = new Date();
-ramadanStart.setDate(today.getDate() - (currentRozaManual - 1));
+let diffTime = today - ramadanStart;
+let currentRoza = Math.floor(diffTime / (1000 * 60 * 60 * 24)) + 1;
 
 let totalRozy = 30;
-let currentRoza = currentRozaManual;
 
+if(currentRoza < 1) currentRoza = 0;
+if(currentRoza > 30) currentRoza = 30;
+
+// 📅 Generate Calendar
 let calendar = document.getElementById("calendar");
 calendar.innerHTML = "";
 
-// Calendar Generate
 for(let i=1; i<=totalRozy; i++){
     let d = document.createElement("div");
     d.className = "day";
@@ -386,12 +392,107 @@ for(let i=1; i<=totalRozy; i++){
     calendar.appendChild(d);
 }
 
-// Progress
+// 📊 Progress Bar
 let percent = (currentRoza / totalRozy) * 100;
-
 document.getElementById("bar").style.width = percent + "%";
 document.getElementById("progressText").innerText =
 "Roza " + currentRoza + " / 30 (" + Math.round(percent) + "% Completed)";
+
+
+// ===============================
+// 🕐 CONVERT 24H TO 12H
+// ===============================
+
+function convertTo12Hour(time24){
+
+    let [hour, minute] = time24.split(":");
+    hour = parseInt(hour);
+
+    let ampm = hour >= 12 ? "PM" : "AM";
+    hour = hour % 12;
+    hour = hour ? hour : 12;
+
+    return hour + ":" + minute + " " + ampm;
+}
+
+
+// ===============================
+// 🌍 AUTO LOCATION + PRAYER TIMES
+// ===============================
+
+function getPrayerTimes(lat, lon){
+
+    let today = new Date();
+    let date = today.getDate() + "-" + (today.getMonth()+1) + "-" + today.getFullYear();
+
+    fetch(`https://api.aladhan.com/v1/timings/${date}?latitude=${lat}&longitude=${lon}&method=2`)
+    .then(res => res.json())
+    .then(data => {
+
+        let fajr = data.data.timings.Fajr;
+        let maghrib = data.data.timings.Maghrib;
+
+        let fajr12 = convertTo12Hour(fajr);
+        let maghrib12 = convertTo12Hour(maghrib);
+
+        document.getElementById("sehriTime").innerText = "Sehri: " + fajr12;
+        document.getElementById("iftarTime").innerText = "Iftar: " + maghrib12;
+
+        startCountdown(maghrib);
+
+    })
+    .catch(() => {
+        document.getElementById("sehriTime").innerText = "Location blocked";
+        document.getElementById("iftarTime").innerText = "Location blocked";
+        document.getElementById("nextPrayer").innerText = "Enable location";
+    });
+}
+
+
+// 📍 Get User Location
+if(navigator.geolocation){
+    navigator.geolocation.getCurrentPosition(position => {
+        getPrayerTimes(position.coords.latitude, position.coords.longitude);
+    }, () => {
+        document.getElementById("sehriTime").innerText = "Location denied";
+        document.getElementById("iftarTime").innerText = "Location denied";
+    });
+}
+
+
+// ===============================
+// ⏳ IFTAR COUNTDOWN
+// ===============================
+
+function startCountdown(iftarTime){
+
+    function updateCountdown(){
+
+        let now = new Date();
+        let [hour, minute] = iftarTime.split(":");
+
+        let iftar = new Date();
+        iftar.setHours(hour, minute, 0);
+
+        let diff = iftar - now;
+
+        if(diff > 0){
+            let h = Math.floor(diff/1000/60/60);
+            let m = Math.floor(diff/1000/60)%60;
+            let s = Math.floor(diff/1000)%60;
+
+            document.getElementById("nextPrayer").innerText =
+            h+"h "+m+"m "+s+"s left until Iftar";
+        }else{
+            document.getElementById("nextPrayer").innerText =
+            "Iftar time passed";
+        }
+    }
+
+    updateCountdown();
+    setInterval(updateCountdown,1000);
+}
+
 
 // Tasbeeh
 let c=0;
@@ -415,27 +516,38 @@ document.getElementById("copyMsg").innerText =
 "Number copied ✔";
 }
 
-// Next Prayer Countdown (example using Iftar time)
-function updateCountdown(){
-    let now = new Date();
-    let iftar = new Date();
-    iftar.setHours(18,32,0);
+// ⏳ Dynamic Iftar Countdown
+function startCountdown(iftarTime){
 
-    let diff = iftar - now;
+    function updateCountdown(){
 
-    if(diff > 0){
-        let h = Math.floor(diff/1000/60/60);
-        let m = Math.floor(diff/1000/60)%60;
-        let s = Math.floor(diff/1000)%60;
+        let now = new Date();
+
+        let [hour, minute] = iftarTime.split(":");
+        hour = parseInt(hour);
+        minute = parseInt(minute);
+
+        let iftar = new Date();
+        iftar.setHours(hour, minute, 0);
+
+        // If today's Iftar passed, set for tomorrow
+        if(now > iftar){
+            iftar.setDate(iftar.getDate() + 1);
+        }
+
+        let diff = iftar - now;
+
+        let h = Math.floor(diff / (1000*60*60));
+        let m = Math.floor((diff / (1000*60)) % 60);
+        let s = Math.floor((diff / 1000) % 60);
 
         document.getElementById("nextPrayer").innerText =
         h+"h "+m+"m "+s+"s left until Iftar";
-    }else{
-        document.getElementById("nextPrayer").innerText =
-        "Iftar time passed";
     }
+
+    updateCountdown();
+    setInterval(updateCountdown,1000);
 }
-setInterval(updateCountdown,1000);
 
 // Sehri Reminder
 function setSehriReminder(){
